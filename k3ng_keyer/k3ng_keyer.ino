@@ -590,6 +590,18 @@ Recent Update History
     2.2.2016120401
       Added keyer_stm32duino.h with function declarations to make ARDUINO_MAPLE_MINI compilation work.  Thanks, Edgar, KC2UEZ
 
+    2.2.2016120901
+      Merged pull request STM32duino compatibilty 30. Thanks, Edgar, KC2UEZ
+
+    2.2.2016120902
+      Fixed bug in command mode when OPTION_WATCHDOG_TIMER is enabled.  Thanks, disneysw.
+
+    2.2.2016121001
+      Support for FUNtronics FK-10 contributed by disneysw. HARDWARE_FK_10 in keyer_hardware.h; files: keyer_pin_settings_fk_10.h, keyer_features_and_options_fk_10.h, keyer_settings_fk_10.h
+
+    2.2.2016121201
+      Additional work on web interface
+
   This code is currently maintained for and compiled with Arduino 1.6.1.  Your mileage may vary with other versions.
 
   ATTENTION: LIBRARY FILES MUST BE PUT IN LIBRARIES DIRECTORIES AND NOT THE INO SKETCH DIRECTORY !!!!
@@ -605,12 +617,11 @@ Recent Update History
 
 */
 
-#define CODE_VERSION "2.2.2016120401"
+#define CODE_VERSION "2.2.2016121201"
 #define eeprom_magic_number 24
 
 #include <stdio.h>
 #include "keyer_hardware.h"
-
 
 #if defined(ARDUINO_SAM_DUE)  
   #include <SPI.h>
@@ -628,27 +639,19 @@ Recent Update History
   #include <EEPROM.h>  
 #endif //ARDUINO_SAM_DUE
 
-#ifdef HARDWARE_NANOKEYER_REV_B
+#if defined(HARDWARE_NANOKEYER_REV_B)
   #include "keyer_features_and_options_nanokeyer_rev_b.h"
-#endif
-
-#ifdef HARDWARE_NANOKEYER_REV_D
+#elif defined(HARDWARE_NANOKEYER_REV_D)
   #include "keyer_features_and_options_nanokeyer_rev_d.h"
-#endif
-
-#ifdef HARDWARE_OPEN_INTERFACE
+#elif defined(HARDWARE_OPEN_INTERFACE)
   #include "keyer_features_and_options_open_interface.h"
-#endif
-
-#ifdef HARDWARE_TINYKEYER
+#elif defined(HARDWARE_TINYKEYER)
   #include "keyer_features_and_options_tinykeyer.h"
-#endif  
-
-#ifdef HARDWARE_TEST
+#elif defined(HARDWARE_FK_10)
+  #include "keyer_features_and_options_fk_10.h"  
+#elif defined(HARDWARE_TEST)
   #include "keyer_features_and_options_test.h"
-#endif    
-
-#ifndef HARDWARE_CUSTOM
+#else
   #include "keyer_features_and_options.h"
 #endif
 
@@ -662,32 +665,25 @@ Recent Update History
 #include "keyer_dependencies.h"
 #include "keyer_debug.h"
 
-#ifdef HARDWARE_NANOKEYER_REV_B
+#if defined(HARDWARE_NANOKEYER_REV_B)
   #include "keyer_pin_settings_nanokeyer_rev_b.h"
   #include "keyer_settings_nanokeyer_rev_b.h"
-#endif
-
-#ifdef HARDWARE_NANOKEYER_REV_D
+#elif defined(HARDWARE_NANOKEYER_REV_D)
   #include "keyer_pin_settings_nanokeyer_rev_d.h"
   #include "keyer_settings_nanokeyer_rev_d.h"
-#endif
-
-#ifdef HARDWARE_OPEN_INTERFACE
+#elif defined(HARDWARE_OPEN_INTERFACE)
   #include "keyer_pin_settings_open_interface.h"
   #include "keyer_settings_open_interface.h"
-#endif
-
-#ifdef HARDWARE_TINYKEYER
+#elif defined(HARDWARE_TINYKEYER)
   #include "keyer_pin_settings_tinykeyer.h"
   #include "keyer_settings_tinykeyer.h"
-#endif  
-
-#ifdef HARDWARE_TEST
+#elif defined(HARDWARE_FK_10)
+  #include "keyer_pin_settings_fk_10.h"
+  #include "keyer_settings_fk_10.h"  
+#elif defined(HARDWARE_TEST)
   #include "keyer_pin_settings_test.h"
   #include "keyer_settings_test.h"
-#endif
-
-#ifndef HARDWARE_CUSTOM
+#else
   #include "keyer_pin_settings.h"
   #include "keyer_settings.h"
 #endif
@@ -733,12 +729,14 @@ Recent Update History
   #include <goertzel.h>
 #endif
 
-#if defined(FEATURE_ETHERNET)
+//#if defined(FEATURE_ETHERNET)
+#if !defined(ARDUINO_MAPLE_MINI)  
   #include <Ethernet.h>               // if this is not included, compilation fails even though all ethernet code is #ifdef'ed out
   #if defined(FEATURE_INTERNET_LINK)
     #include <EthernetUdp.h>
   #endif //FEATURE_INTERNET_LINK
-#endif //FEATURE_ETHERNET
+#endif //!defined(ARDUINO_MAPLE_MINI)  
+//#endif //FEATURE_ETHERNET
 
 
 #if defined(FEATURE_USB_KEYBOARD) || defined(FEATURE_USB_MOUSE)  // note_usb_uncomment_lines
@@ -1157,7 +1155,7 @@ PRIMARY_SERIAL_CLS * debug_serial_port;
 
   #if defined(FEATURE_WEB_SERVER)
     #define MAX_WEB_REQUEST 512  
-    String readString;
+    String web_server_incoming_string;
     uint8_t valid_request = 0;
     EthernetServer server(FEATURE_ETHERNET_WEB_LISTENER_PORT);                             // default server port 
     #define MAX_PARSE_RESULTS 32
@@ -4834,20 +4832,33 @@ void tx_and_sidetone_key (int state)
             }
           }            
         #else ////FEATURE_CMOS_SUPER_KEYER_IAMBIC_B_TIMING
-          if ((float(float(millis()-starttime)/float(starttime-ticks))*100) >= configuration.cmos_super_keyer_iambic_b_timing_percent) {
+          if (configuration.cmos_super_keyer_iambic_b_timing_on){
+            if ((float(float(millis()-starttime)/float(starttime-ticks))*100) >= configuration.cmos_super_keyer_iambic_b_timing_percent) {
+              if (being_sent == SENDING_DIT) {
+                check_dah_paddle();
+              } else {
+                if (being_sent == SENDING_DAH) {
+                  check_dit_paddle();
+                }
+              }     
+            } else {
+              if (((being_sent == SENDING_DIT) || (being_sent == SENDING_DAH)) && (paddle_pin_read(paddle_left) == LOW ) && (paddle_pin_read(paddle_right) == LOW )) {
+                dah_buffer = 0;
+                dit_buffer = 0;         
+              }              
+            }
+          } else {
             if (being_sent == SENDING_DIT) {
               check_dah_paddle();
             } else {
               if (being_sent == SENDING_DAH) {
                 check_dit_paddle();
+              } else {
+                check_dah_paddle();
+                check_dit_paddle();                
               }
-            }     
-          } else {
-            if (((being_sent == SENDING_DIT) || (being_sent == SENDING_DAH)) && (paddle_pin_read(paddle_left) == LOW ) && (paddle_pin_read(paddle_right) == LOW )) {
-              dah_buffer = 0;
-              dit_buffer = 0;         
-            }              
-          }
+            }  
+          }  
         #endif //FEATURE_CMOS_SUPER_KEYER_IAMBIC_B_TIMING
 
       } else { //(configuration.keyer_mode != ULTIMATIC)
@@ -4969,19 +4980,32 @@ void tx_and_sidetone_key (int state)
           }   
 
         #else ////FEATURE_CMOS_SUPER_KEYER_IAMBIC_B_TIMING
-          if ((float(float(micros()-starttime)/float(endtime-starttime))*100) >= configuration.cmos_super_keyer_iambic_b_timing_percent) {
+          if (configuration.cmos_super_keyer_iambic_b_timing_on){
+            if ((float(float(micros()-starttime)/float(endtime-starttime))*100) >= configuration.cmos_super_keyer_iambic_b_timing_percent) {
+              if (being_sent == SENDING_DIT) {
+                check_dah_paddle();
+              } else {
+                if (being_sent == SENDING_DAH) {
+                  check_dit_paddle();
+                }
+              }     
+            } else {
+              if (((being_sent == SENDING_DIT) || (being_sent == SENDING_DAH)) && (paddle_pin_read(paddle_left) == LOW ) && (paddle_pin_read(paddle_right) == LOW )) {
+                dah_buffer = 0;
+                dit_buffer = 0;         
+              }                 
+            }
+          } else {
             if (being_sent == SENDING_DIT) {
               check_dah_paddle();
             } else {
               if (being_sent == SENDING_DAH) {
                 check_dit_paddle();
+              } else {
+                check_dah_paddle();
+                check_dit_paddle();                
               }
-            }     
-          } else {
-            if (((being_sent == SENDING_DIT) || (being_sent == SENDING_DAH)) && (paddle_pin_read(paddle_left) == LOW ) && (paddle_pin_read(paddle_right) == LOW )) {
-              dah_buffer = 0;
-              dit_buffer = 0;         
-            }                 
+            }               
           }
         #endif //FEATURE_CMOS_SUPER_KEYER_IAMBIC_B_TIMING
 
@@ -5109,6 +5133,11 @@ long get_cw_input_from_user(unsigned int exit_time_milliseconds) {
   unsigned long entry_time = millis();
 
   while (looping) {
+
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
+
     #ifdef FEATURE_POTENTIOMETER
       if (configuration.pot_activated) {
         check_potentiometer();
@@ -5161,6 +5190,9 @@ long get_cw_input_from_user(unsigned int exit_time_milliseconds) {
 
   } //while (looping)
 
+
+
+
   if (button_hit) {
     #ifdef DEBUG_GET_CW_INPUT_FROM_USER
       debug_serial_port->println(F("get_cw_input_from_user: button_hit exit 9"));
@@ -5186,6 +5218,11 @@ void command_mode()
   #ifdef DEBUG_COMMAND_MODE
     debug_serial_port->println(F("command_mode: entering"));
   #endif
+
+  #ifdef OPTION_WATCHDOG_TIMER
+    wdt_disable();
+  #endif //OPTION_WATCHDOG_TIMER
+
   
   byte looping;
   byte button_that_was_pressed = 0;
@@ -5221,6 +5258,10 @@ void command_mode()
     cw_char = 0;
  //   cw_char = get_cw_input_from_user(0);
 
+
+    // #ifdef OPTION_WATCHDOG_TIMER
+    //   wdt_reset();
+    // #endif  //OPTION_WATCHDOG_TIMER
 
     looping = 1;
     while (looping) {
@@ -5505,7 +5546,7 @@ void command_mode()
             stay_in_command_mode = 0;
             break;
         #endif  //FEATURE_ALPHABET_SEND_PRACTICE
-//zzzzzzz
+
         case 112211: // ? - status
           
           delay(250);
@@ -5590,6 +5631,12 @@ void command_mode()
       debug_serial_port->print(F("command_mode: command_mode_disable_tx set"));
     }
   #endif //DEBUG_COMMAND_MODE
+
+
+  #ifdef OPTION_WATCHDOG_TIMER
+    wdt_enable(WDTO_4S);
+  #endif //OPTION_WATCHDOG_TIMER
+
 }
 #endif //FEATURE_COMMAND_BUTTONS
 
@@ -5655,18 +5702,23 @@ void command_dah_to_dit_ratio_adjust() {
   #endif
 
   while (looping) {
-   send_dit();
-   send_dah();
-   if (paddle_pin_read(paddle_left) == LOW) {
-     adjust_dah_to_dit_ratio(10);
-   }
-   if (paddle_pin_read(paddle_right) == LOW) {
-     adjust_dah_to_dit_ratio(-10);
-   }
-   while ((paddle_pin_read(paddle_left) == LOW && paddle_pin_read(paddle_right) == LOW) || (analogbuttonread(0))) { // if paddles are squeezed or button0 pressed - exit
-     looping = 0;
-   }
+    send_dit();
+    send_dah();
+    if (paddle_pin_read(paddle_left) == LOW) {
+      adjust_dah_to_dit_ratio(10);
+    }
+    if (paddle_pin_read(paddle_right) == LOW) {
+      adjust_dah_to_dit_ratio(-10);
+    }
+    while ((paddle_pin_read(paddle_left) == LOW && paddle_pin_read(paddle_right) == LOW) || (analogbuttonread(0))) { // if paddles are squeezed or button0 pressed - exit
+      looping = 0;
+    }
    
+
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
+
   }
   while (paddle_pin_read(paddle_left) == LOW || paddle_pin_read(paddle_right) == LOW || analogbuttonread(0) ) {}  // wait for all lines to go high
   dit_buffer = 0;
@@ -5686,20 +5738,24 @@ void command_weighting_adjust() {
   #endif
 
   while (looping) {
-   send_dit();
-   send_dah();
-   if (paddle_pin_read(paddle_left) == LOW) {
-     configuration.weighting = configuration.weighting + 1;
-     if (configuration.weighting > 90){configuration.weighting = 90;}
-   }
-   if (paddle_pin_read(paddle_right) == LOW) {
-     configuration.weighting = configuration.weighting - 1;
-     if (configuration.weighting < 10){configuration.weighting = 10;}
-   }
-   while ((paddle_pin_read(paddle_left) == LOW && paddle_pin_read(paddle_right) == LOW) || (analogbuttonread(0))) { // if paddles are squeezed or button0 pressed - exit
-     looping = 0;
-   }
+    send_dit();
+    send_dah();
+    if (paddle_pin_read(paddle_left) == LOW) {
+      configuration.weighting = configuration.weighting + 1;
+      if (configuration.weighting > 90){configuration.weighting = 90;}
+    }
+    if (paddle_pin_read(paddle_right) == LOW) {
+      configuration.weighting = configuration.weighting - 1;
+      if (configuration.weighting < 10){configuration.weighting = 10;}
+    }
+    while ((paddle_pin_read(paddle_left) == LOW && paddle_pin_read(paddle_right) == LOW) || (analogbuttonread(0))) { // if paddles are squeezed or button0 pressed - exit
+      looping = 0;
+    }
    
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
+
   }
   while (paddle_pin_read(paddle_left) == LOW || paddle_pin_read(paddle_right) == LOW || analogbuttonread(0) ) {}  // wait for all lines to go high
   dit_buffer = 0;
@@ -5723,6 +5779,10 @@ void command_tuning_mode() {
   send_dit();
   key_tx = 1;
   while (looping) {
+
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
 
     if (paddle_pin_read(paddle_left) == LOW) {
       sending_mode = MANUAL_SENDING;
@@ -5778,10 +5838,8 @@ void sidetone_adj(int hz) {
   if ((configuration.hz_sidetone + hz) > SIDETONE_HZ_LOW_LIMIT && (configuration.hz_sidetone + hz) < SIDETONE_HZ_HIGH_LIMIT) {
     configuration.hz_sidetone = configuration.hz_sidetone + hz;
     config_dirty = 1;
-    #ifdef FEATURE_DISPLAY
-    #ifdef OPTION_MORE_DISPLAY_MSGS
-    lcd_center_print_timed("Sidetone " + String(configuration.hz_sidetone) + " Hz", 0, default_display_msg_delay);
-    #endif
+    #if defined(FEATURE_DISPLAY) && defined(OPTION_MORE_DISPLAY_MSGS)
+      lcd_center_print_timed("Sidetone " + String(configuration.hz_sidetone) + " Hz", 0, default_display_msg_delay);
     #endif   
   }
 
@@ -5820,7 +5878,10 @@ void command_sidetone_freq_adj() {
     while ((paddle_pin_read(paddle_left) == LOW && paddle_pin_read(paddle_right) == LOW) || (analogbuttonread(0))) { // if paddles are squeezed or button0 pressed - exit
       looping = 0;
     }
-    
+
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
 
   }
   while (paddle_pin_read(paddle_left) == LOW || paddle_pin_read(paddle_right) == LOW || analogbuttonread(0) ) {}  // wait for all lines to go high
@@ -5854,13 +5915,17 @@ void command_speed_mode()
       looping = 0;
     }
 
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
+
   }
   while (paddle_pin_read(paddle_left) == LOW || paddle_pin_read(paddle_right) == LOW || analogbuttonread(0) ) {}  // wait for all lines to go high
   #ifndef FEATURE_DISPLAY
-  // announce speed in CW
-  wpm_string = String(configuration.wpm, DEC);
-  send_char(wpm_string[0],KEYER_NORMAL);
-  send_char(wpm_string[1],KEYER_NORMAL);
+    // announce speed in CW
+    wpm_string = String(configuration.wpm, DEC);
+    send_char(wpm_string[0],KEYER_NORMAL);
+    send_char(wpm_string[1],KEYER_NORMAL);
   #endif
 
   dit_buffer = 0;
@@ -5923,8 +5988,7 @@ void switch_to_tx(byte tx)
 
 //------------------------------------------------------------------
 
-#ifdef FEATURE_MEMORIES
-#ifdef FEATURE_COMMAND_BUTTONS
+#if defined(FEATURE_MEMORIES) && defined(FEATURE_COMMAND_BUTTONS)
 void check_the_memory_buttons()
 {
 
@@ -5936,20 +6000,18 @@ void check_the_memory_buttons()
   }
 }
 #endif
-#endif
 
 //------------------------------------------------------------------
 
-#ifdef FEATURE_COMMAND_BUTTONS
-#ifdef FEATURE_DL2SBA_BANKSWITCH
+#if defined(FEATURE_COMMAND_BUTTONS) && defined(FEATURE_DL2SBA_BANKSWITCH)
 void setOneButton(int button, int index) { 
-    int button_value = int(1023 * (float(button * analog_buttons_r2)/float((button * analog_buttons_r2) + analog_buttons_r1))); 
-    int lower_button_value = int(1023 * (float((button-1) * analog_buttons_r2)/float(((button-1) * analog_buttons_r2) + analog_buttons_r1))); 
-    int higher_button_value = int(1023 * (float((button+1) * analog_buttons_r2)/float(((button+1) * analog_buttons_r2) + analog_buttons_r1))); 
-    button_array_low_limit[index] = (button_value - ((button_value - lower_button_value)/2)); 
-    button_array_high_limit[index] = (button_value + ((higher_button_value - button_value)/2)); 
+    
+  int button_value = int(1023 * (float(button * analog_buttons_r2)/float((button * analog_buttons_r2) + analog_buttons_r1))); 
+  int lower_button_value = int(1023 * (float((button-1) * analog_buttons_r2)/float(((button-1) * analog_buttons_r2) + analog_buttons_r1))); 
+  int higher_button_value = int(1023 * (float((button+1) * analog_buttons_r2)/float(((button+1) * analog_buttons_r2) + analog_buttons_r1))); 
+  button_array_low_limit[index] = (button_value - ((button_value - lower_button_value)/2)); 
+  button_array_high_limit[index] = (button_value + ((higher_button_value - button_value)/2)); 
 }
-#endif
 #endif
 
 //------------------------------------------------------------------
@@ -5975,51 +6037,51 @@ void initialize_analog_button_array() {
   
   #ifndef FEATURE_DL2SBA_BANKSWITCH
   
-  int button_value;
-  int lower_button_value;
-  int higher_button_value;
+    int button_value;
+    int lower_button_value;
+    int higher_button_value;
 
-  #ifdef OPTION_REVERSE_BUTTON_ORDER
-  byte y = analog_buttons_number_of_buttons - 1;
-  #endif
-
-  for (int x = 0;x < analog_buttons_number_of_buttons;x++) {
-    button_value = int(1023 * (float(x * analog_buttons_r2)/float((x * analog_buttons_r2) + analog_buttons_r1)));
-    lower_button_value = int(1023 * (float((x-1) * analog_buttons_r2)/float(((x-1) * analog_buttons_r2) + analog_buttons_r1)));
-    higher_button_value = int(1023 * (float((x+1) * analog_buttons_r2)/float(((x+1) * analog_buttons_r2) + analog_buttons_r1)));
-    #ifndef OPTION_REVERSE_BUTTON_ORDER
-    button_array_low_limit[x] = (button_value - ((button_value - lower_button_value)/2));
-    button_array_high_limit[x] = (button_value + ((higher_button_value - button_value)/2));
-    #else
-    button_array_low_limit[y] = (button_value - ((button_value - lower_button_value)/2));
-    button_array_high_limit[y] = (button_value + ((higher_button_value - button_value)/2));
-    y--;
+    #ifdef OPTION_REVERSE_BUTTON_ORDER
+      byte y = analog_buttons_number_of_buttons - 1;
     #endif
 
-    #ifdef DEBUG_BUTTON_ARRAY    
-    debug_serial_port->print("initialize_analog_button_array: ");
-    debug_serial_port->print(x);
-    debug_serial_port->print(": ");
-    debug_serial_port->print(button_array_low_limit[x]);
-    debug_serial_port->print(" - ");
-    debug_serial_port->println(button_array_high_limit[x]);
-    #endif //DEBUG_BUTTON_ARRAY
+    for (int x = 0;x < analog_buttons_number_of_buttons;x++) {
+      button_value = int(1023 * (float(x * analog_buttons_r2)/float((x * analog_buttons_r2) + analog_buttons_r1)));
+      lower_button_value = int(1023 * (float((x-1) * analog_buttons_r2)/float(((x-1) * analog_buttons_r2) + analog_buttons_r1)));
+      higher_button_value = int(1023 * (float((x+1) * analog_buttons_r2)/float(((x+1) * analog_buttons_r2) + analog_buttons_r1)));
+      #ifndef OPTION_REVERSE_BUTTON_ORDER
+        button_array_low_limit[x] = (button_value - ((button_value - lower_button_value)/2));
+        button_array_high_limit[x] = (button_value + ((higher_button_value - button_value)/2));
+      #else
+        button_array_low_limit[y] = (button_value - ((button_value - lower_button_value)/2));
+        button_array_high_limit[y] = (button_value + ((higher_button_value - button_value)/2));
+        y--;
+      #endif
+
+      #ifdef DEBUG_BUTTON_ARRAY    
+        debug_serial_port->print("initialize_analog_button_array: ");
+        debug_serial_port->print(x);
+        debug_serial_port->print(": ");
+        debug_serial_port->print(button_array_low_limit[x]);
+        debug_serial_port->print(" - ");
+        debug_serial_port->println(button_array_high_limit[x]);
+      #endif //DEBUG_BUTTON_ARRAY
 
 
-  }
+    }
   
   #else //FEATURE_DL2SBA_BANKSWITCH
   
-  setOneButton(0,0); 
-  setOneButton(1,3); 
-  setOneButton(2,2); 
-  setOneButton(3,1); 
-  setOneButton(4,9); 
-  setOneButton(5,8); 
-  setOneButton(6,7); 
-  setOneButton(7,6); 
-  setOneButton(8,5); 
-  setOneButton(9,4); 
+    setOneButton(0,0); 
+    setOneButton(1,3); 
+    setOneButton(2,2); 
+    setOneButton(3,1); 
+    setOneButton(4,9); 
+    setOneButton(5,8); 
+    setOneButton(6,7); 
+    setOneButton(7,6); 
+    setOneButton(8,5); 
+    setOneButton(9,4); 
       
   #endif //FEATURE_DL2SBA_BANKSWITCH
 #endif //FEATURE_COMMAND_BUTTONS
@@ -6398,7 +6460,6 @@ void service_dit_dah_buffers()
         send_dit();
       }
 
-//zzzzzzzz
       if (dah_buffer) {
         dah_buffer = 0;
         if (!bug_dah_flag) {
@@ -6513,6 +6574,11 @@ void send_the_dits_and_dahs(char const * cw_to_send){
     #if defined(FEATURE_SERIAL)
       check_serial();
     #endif
+
+    #ifdef OPTION_WATCHDOG_TIMER
+      wdt_reset();
+    #endif  //OPTION_WATCHDOG_TIMER
+
   }
 
 }
@@ -7654,6 +7720,126 @@ void winkey_admin_get_values_command() {
 
 }
 #endif
+
+
+/*
+
+Chapter One
+
+It was late on a rainy Sunday evening.  Static crashes on the direct conversion receiver signaled a distant thunderstorm, due to arrive in an hour or so.  Colin knew he would have to disconnect the little microcontroller circuit from the receiver and all the station antennas soon, but it was getting late and he had to get his sleep for work the next day.
+
+The contraption was a tangled mess on his desk, something only a radio amateur or mad scientist could appreciate.  Alligator clips connected the I and Q audio from the simple receiver to the microcontroller.  Colin had been learning about fast Fourier analysis.  This was his first attempt at actually running the code in an effort to decode RTTY signals.   The microcontroller probably lacked the horsepower to do it, and Colin knew expecting any sort of performance from his creation was a long shot.
+
+Colin tuned to some RTTY signals but couldn't copy anything, despite carefully and slowly tuning the receiver in hopes of hitting that sweet spot where perhaps the microcontroller would blurt out some intelligence, some discernable word or text.  Just one recognizable snippet would give him the feeling of accomplishment or even victory, even if his design never proved to be usable in his nightly hobby.
+
+The static crashes grew stronger and more frequent.  Colin had resigned himself to the fact that success would not be achieved this evening.  The approaching storm along with his growing fatigue convinced him to shut things down and head upstairs to bed.  Just then a burst of noise, different from the thunderstorm static crashes, but a type that you normally hear on 80 meters each night blurted out.  The microcontroller sent out its serial port a string of random characters, in a vain attempt to decode the sounds:
+
+GEHZCVFNOVTZBEBA
+
+Colin went about the process of disconnecting the power to everything and disconnecting antennas and went to bed.
+
+The next evening after supper with his family, Colin went to his basement radio room again, determined to work again on his project but perhaps less eager than before due to the increasing futility of his efforts.  The microcontroller sat connected to the receiver, and the controller to the computer.  He listened to the receiver in the background while responding to emails.  There was a QSO in progress, an old man talking about his dog itching a lot.  The two old men in the conversation droned on forever, with Colin chuckling to himself, but too caught up in his email to reach over and tune the rig to another frequency in hopes of finding a more interesting conversation.
+
+A burst of noise came through the rig again, much like the night before, though much stronger.  The simple receiver lacked automatic gain control and the strong signal produced a rather loud, annoying noise emanating from the rig, prompting Colin to reach over and turn the volume down.  Colin noticed on his serial terminal program another random string of characters which the microcontroller dutifully decoded:
+
+GEHZCVFNOVTZBEBA
+
+The string looked familiar to Colin.  He copied and pasted the string into search on his computer.  The search produced one hit, the terminal program log from the previous evening.  Colin opened the file and saw the matching string, 16 characters.  "What are the chances of that happening?", he thought.  He looked through his code again, looking for some sort of mistake, pattern in the code algorithm, or some plausible explanation. The receiver belched again:
+
+GEHZCVFNOVTZBEBA
+
+At this point Colin had no plausible explanation why the same random string of characters would be decoded last night and this evening, from mere noise bursts.  Frustrated, he decided to post a message on an Internet group describing the strange behavior and the random characters, and then walked away from his radios to watch TV with the family.  After almost an hour of watching mindless sitcoms, it was time for the kids to go to bed.  After they were tucked into bed, Colin came back to his desk to catch up on email.
+
+The receiver, still powered up with the random noise of the universe coming out of the speaker at a low level, and the connected microcontroller circuit sat idle, waiting for some signal to decode.  An AM roundtable comes up on frequency and he listens awhile, while he continues to web surf, looking for something to occupy his mind.  A static crash comes through the speaks and the microcontroller terminal comes alive again, spewing characters:
+
+COLINMEETME@40-10-45.5&75-10-52.6@SAT1200Z
+
+"Wow" Colin exclaims, almost involuntarily.  He pauses for a moment, hoping his wife in the next room hasn't heard him.  She doesn't respond, continuing to watch TV.  "That's my name....coordinates, and a day and time.  That can't be a coincidence.  What in the world have I stumbled upon?" he thinks.  Nervously he brings up Google Earth and enters  the coordinates.  It's a coffee shop, about an hour and twenty minutes south. " Whoever sent this wants to meet me?"
+
+Chapter Two
+
+Colin barely slept the rest of the nights that week thinking about the message.  He stays out of his radio room which is very unlike him.  His wife is out of town this weekend, and Colin rationalizes that there's no excuse to not go to the coffee shop.  Early Saturday morning he quickly gets up, and nervously gets dressed.  He worries if he's given himself enough time to get there.  It's near the city and the surrounding suburban area where the coffee shop is located is notorious for bad traffic.  He decides to take a toll road and exit where he can take back roads to avoid the main thoroughfares.
+
+He arrived at the coffee with a few minutes to spare, takes an out of the way parking spot towards the rear of the restaurant, backing in so he can see anyone pulling in or out, and the side entrance of the coffee shop.  He sits in the vehicle and surveys the parking lot.   Opening the glove compartment he pulls out a pistol in a holster.  Although licensed for carrying a sidearm, Colin rarely, if ever actual wore it in public.  He strapped it on to his belt and double-checked that his jacket concealed it.  His hands shook nervously, but he reassured himself he was somewhat prepared in case the proverbial "men in black" attempted to swoop down and throw him into a black van and drive off.
+
+Looking up, Colin sees an old man in the parking lot looking his way.  They make eye contact.  Colin looks away but it's clear the old man is has somehow identified him.  Colin sighs.  "Perhaps he saw all the antennas on my vehicle, or my callsign plate."  He gets out of the vehicle, locks it, and walks over to the old man.
+
+"Hello" he says in a somewhat frail voice.  "You Colin?"
+
+"Yes" replies Colin, nervously.
+
+The old man nods and his face lightens up.  "Come inside, let's talk."
+
+They go inside and get in line.  The old man orders a coffee, and Colin, never acquiring a taste for coffee, get a hot chocolate.  They grab a table towards the back, away from everyone else.  The old man looks around to make sure they're out of earshot of others.
+
+The old man leans inward, "So you copied my transmission the other day?"
+
+"Yes."  Colin tells him the story of how he came upon the transmission.
+
+"Well, congratulations.  You've stumbled upon something I think you're going to be very happy about.  You're in amateur radio?"  Colin nods.  "You've come upon a secret society.  We've been around a long time, since World War II.  Some of us are hams, others aren't.  We're everywhere.  You've heard us anytime you've turned on a radio, you just didn't know it.  We're the people you don't normally find on the air....the academics, scientists, progressives, politicians, famous people...activists...introverts...geniuses...people close to world leaders.  We communicate via encrypted messaging.  Those noise bursts you heard were transmissions from me.  Some of our communications are noise bursts.  Sometime we communicate with pure noise, indistinguishable from the normal noise you hear on your receiver everyday.  We hide out in the open."
+
+"But how do you do this?"  Colin's technical curiosity emerges.  "How do you communicate with noise?"
+
+The old man takes a sip from his coffee.  "We use a pseudo-random bit stream and quadrature modulate a digital signal taken from a special alphabet, somewhat like ASCII.  It's amazingly simple but nearly impossible to break without the bit stream.  You were just lucky to receive it.  Apparently the buggy code in your microcontroller digital signal processing generates part of the pseudo random stream under the right conditions.  Everyone thinks 80 meters is noisy.  It's really not, there's just a lot of us talking on it.  You ever turn on your radio and it's S9 noise everywhere?"
+
+"Yes" replies Colin.
+
+"Sometimes that's us.  We sometimes modulate wideband noise when we have a particularly large message to send out, something important.  The technology is really interesting.  It pushes the limits of Shannon's Equation." he pauses.  "You ever hear of long delay echos?"
+
+"I've never experienced one, but I've read about them and heard they're somewhat common." Colin says.
+
+He smiles.  "That's us.  Sometime we communicate by receiving someone's signal on the air, we delay it, modulate the noise on it, and re-transmit it.  We do that for fun.  People seem to get a kick out of it."
+
+"Why does this society exist?"  asks Colin.
+
+"We serve a higher purpose." pointing above, he says.  "It came out of the Resistance in World War II and was originally intended to prevent atrocities like the Holocaust from happening again, but since then it's grown to encompass other things.  Many of us started off as radio amateurs and got bored with it.  We dropped out.  We're the radio guys you don't see at hamfests or on the Internet.  Those of us who are licensed amateurs usually lay low and don't get on the air, at least in a way you can hear us.  Amateur radio is to us as CB is to amateur radio.  Few of us fit in with them. Members communicate about important stuff, like scientific discoveries or secret information from governments that could save lives or change the world.  We've provided information that has ended wars, and started some.  Some say we provided the information that started the fall of the USSR.  We operate without borders or recognition of nationality.   I'm not sure how many of us there are, but it's perhaps in the thousands, worldwide."
+
+Colin asks "Are you spies?"
+
+"We're not spies, we're communicators." he replies.
+
+"Does the government know of this network?" 
+
+"Perhaps, but not at a high level or in any official capacity that we know of.  We definitely have members close to people high up, advisers of sorts.  Undoubtedly there are members in intelligence agencies in various governments.  But they don't dare divulge knowledge of the network.  It's too valuable.  To them it's a tool, and they know they would be denied that tool, purged from the network, should they let others know of it.  But they are free to use the information they receive, as they see fit.  But they know they have a responsibility to use it for the greater good."
+
+The old man clears his throat and takes another gulp of coffee.  "Communications is a weapon, more powerful than any weapon you can carry.  That phone," he said, pointing to my iPhone lying on the table, " is just as powerful as the weapon you have on your belt, just in a different way."
+
+Colin tries to hide a puzzled look, wondering how the old man knew of his weapon.  Changing the subject, he asks "How do people get into this?"
+
+"Membership is by invitation only.  We have 16 character identity strings.  You received mine.  An identity string is what you would call a callsign in amateur radio.  You're the first person I've ever heard of receiving the signal without knowledge of the code.  There's no process for someone like you to join.  But I'm getting old and I need to hand off my encryption stream to someone before I die, to keep it going.  You seem to be a nice enough guy, qualified to join, from what I have seen and heard about you."
+
+"But.... this sounds like a network of rather smart and powerful people.  I'm just an ordinary guy who likes to play with radios and occasionally build something.  I'm not a scientist or someone powerful.  Is there some role I will have, something I need to do?" Colin asks.
+
+"Some members just have fun with this, somewhat like a hobby.  They don't have roles, for now.  You will have a role, you just don't know what it is yet.  Do not seek out a role.  Do not try to make yourself important or identify some great thing to do.  Those who invent things to do, create crises, or give themselves power get purged from the network.  Your role will become known in due time and you will know it when you encounter it.  Trust me." 
+
+He goes on, "You're going to receive more information.  It will explain the encryption algorithm.  You know how to program, so with a little bit of work you should be able to write the software for a transceiver that will work reliably.  I'll also give you an identity string.  It's derived from mine and you'll eventually be able to trace it back mathematically to previous identity strings and others in the hierarchy.  The more you communicate, your identity string will establish a trust relationship with other identity strings, other operators.  The more operators you gain trust with, you will get more of the algorithm and more of the bit stream.  With more of the algorithm and bit stream, the more signals you will be able to receive and you will be able to communicate with more people in the network hierarchy.  With perseverance and patience you'll get to know some high level members, perhaps even people you see on the news."
+
+"I said before that there are thousands of operators.  The truth is I don't know how many operators there are.  No one does.  As more of the bit stream is revealed, more members appear.  For all we know there could be millions of members.  There could be extra-terrestrials in the network."  He chuckles.  "Some have theorized that some of the noise we receive from outer space could be actually intelligence encrypted in the noise, like we do.  We just don't have the information or computing power yet to decode it."
+
+The smile leaves old man's face.  "You have to keep this a secret.  If you reveal this to the wrong people, the results would be disastrous.  Those who reveal the code of the noise are purged from the network, sometimes not seen again."
+Before Colin could ask his next question, the old man got up, handed him a card with characters written in bold black marker:
+
+8^fGwq9(:lLDPu6$
+
+"Congratulations.  This is your identity string.  Memorize it.  Guard it with your life."  He offers his right hand and they shake hands.
+
+Colin follows the old man out the door, wanting to ask more questions. "Where will I would get the information on the algorithm, how do I build a transceiver?"  he frantically asks.
+
+"You have to listen to the noise."  he said as he walked to his car, got in, and drove off.
+
+Colin drove home in somewhat of a daze, not sure what to make of all this.  Was the old man crazy, or was all this real?  Colin went about my business for a few days, thinking about the old man and wondering what would be next.  "Would I get something in the mail?  Perhaps an email?  Would he contact me again?"
+
+A few days later while watching the local news, a story came on about the death of a prominent researcher.  Colin was shocked to see a grainy photo of the old man he had met at the coffee shop, the photo perhaps from the 60s as he looked younger, more Colin's age today.  Walter was his name.  He had worked at Bell Labs in New Jersey as a physicist and had made many discoveries in communications which were patented in the 60s and 70s.  Walter was a quiet man but was known for his community work.  He fled Germany with his family as a young boy prior to World War II breaking out.  His father was a poor potato farmer who later helped the allies in cryptography after he devised a code based on the patterns of eyes on potatoes.  His wife had passed before him several years earlier.  Walter died alone at his home, of unknown causes and his death was under investigation.  Investigators doubted there was foul play, but there was a rather odd paper he was writing with codes on it found next to him.  He was survived by two children and some grandchildren residing in Florida.  Colin thought perhaps he could contact his family, but he knew he couldn't risk revealing what he had heard from the man if what he said was true.  Colin sat dumbfounded, wondering if he had lost his one connection to the secret network.
+
+Later that night Colin once again turned on his receiver to 80 meters.  The little circuit sat idle with alligator clips connecting the rig audio to it.  His original goal of copying a RTTY signal now seemed pointless and insignificant in the grand scheme of things with the new knowledge he had.  He wanted to write more code and figure out the algorithm, all of it.  But Colin had no idea what next step to take, no clue what the algorithm was that would grant him access to a whole new world.  He pulled the card out of his wallet with his identity string and stared at the seemingly random 16 characters.  It contained uppercase, lowercase, numbers, symbols, just about everything.  Perhaps it was a base 64 character set?  What secrets were in it?  His thoughts were a disorganized jumble, and feeling a headache coming on he stopped himself from thinking further about it.
+
+He was no longer interested in listening to Morse code signals or voice conversations.  That was merely just meaningless noise, a distraction from what he was really looking for.  Every little pop and crackle on the receiver caught his attention.  Was it just random atmospheric noise leftover from the Big Bang or some noisy electrical appliance, or was there intelligence in each seemingly random sounds?  For hours he scanned through the band, hoping to catch the right signal in hopes that his little contraption might pick up some clue that would lead him to the next step, perhaps someone else in the network since his contact had passed away.  BZZZZZT bursts from the receiver and the microcontroller terminal screen came alive:
+
+ 8^fGwq9(:lLDPu6$ : KEEP LISTENING TO THE NOISE AND AWAIT FURTHER INFO.
+
+*/
+
+
 //-------------------------------------------------------------------------------------------------------
 
 #if defined(FEATURE_SERIAL)
@@ -10377,6 +10563,19 @@ void serial_status(PRIMARY_SERIAL_CLS * port_to_use) {
       port_to_use->println(button_array_high_limit[x]);
     }
   #endif 
+//aaaaaaa
+  #if defined(FEATURE_ETHERNET)
+    port_to_use->print(F("Ethernet: "));
+    port_to_use->print(configuration.ip[0]);
+    port_to_use->print(F("."));
+    port_to_use->print(configuration.ip[1]);
+    port_to_use->print(F("."));
+    port_to_use->print(configuration.ip[2]);
+    port_to_use->print(F("."));
+    port_to_use->println(configuration.ip[3]);      
+  #endif
+
+  port_to_use->println(F(">"));
   
 }
 #endif
@@ -13737,7 +13936,6 @@ void check_for_network_restart(){
 #if defined(FEATURE_WEB_SERVER)
 void service_web_server() {
 
-
   // Create a client connection
   EthernetClient client = server.available();
   if (client) {
@@ -13749,50 +13947,48 @@ void service_web_server() {
         char c = client.read();
      
         //read char by char HTTP request
-        if (readString.length() < MAX_WEB_REQUEST){
+        if (web_server_incoming_string.length() < MAX_WEB_REQUEST){
           //store characters to string
-          readString += c;
-          #if defined(DEBUG_STATION_INTERLOCK)
-            debug.print(c);
-          #endif //DEBUG_STATION_INTERLOCK  
+          web_server_incoming_string += c;
+          #if defined(DEBUG_WEB_SERVER_READS)
+            debug_serial_port->print("service_web_server: read: ");
+            debug_serial_port->print(c);
+          #endif //DEBUG_WEB_SERVER_READS  
         } else {
-          // readString = "";
+          // web_server_incoming_string = "";
         }
 
         //has HTTP request ended?
         if (c == '\n'){ 
 
-          #if defined(DEBUG_STATION_INTERLOCK)
-            debug.println(readString); //print to serial monitor for debuging     
-          #endif //DEBUG_STATION_INTERLOCK
+          #if defined(DEBUG_WEB_SERVER_READS)
+            debug_serial_port->println(web_server_incoming_string); //print to serial monitor for debuging     
+          #endif //DEBUG_WEB_SERVER_READS
 
-          if (readString.startsWith("GET / ")){
+          if (web_server_incoming_string.startsWith("GET / ")){
             valid_request = 1;
             web_print_page_main_menu(client);
           }
 
-          if (readString.startsWith("GET /About")){
+          if (web_server_incoming_string.startsWith("GET /About")){
             valid_request = 1;
             web_print_page_about(client);
           }
-
-
-
-          if (readString.startsWith("GET /KeyerSettings")){
+//zzzzzzzz
+          if (web_server_incoming_string.startsWith("GET /KeyerSettings")){
             valid_request = 1;
             // are there form results being posted?
-            if (readString.indexOf("?") > 0){
-              //web_print_page_keyer_settings_process(client);
+            if (web_server_incoming_string.indexOf("?") > 0){
+              web_print_page_keyer_settings_process(client);
             } else {
               web_print_page_keyer_settings(client);
             }
           }
 
-
-          if (readString.startsWith("GET /NetworkSettings")){
+          if (web_server_incoming_string.startsWith("GET /NetworkSettings")){
             valid_request = 1;
             // are there form results being posted?
-            if (readString.indexOf("?ip0=") > 0){
+            if (web_server_incoming_string.indexOf("?ip0=") > 0){
               web_print_page_network_settings_process(client);
             } else {
               web_print_page_network_settings(client);
@@ -13800,20 +13996,33 @@ void service_web_server() {
           }
 
           #if defined(FEATURE_INTERNET_LINK)
-            if (readString.startsWith("GET /LinkSettings")){
+            if (web_server_incoming_string.startsWith("GET /LinkSettings")){
               valid_request = 1;
               // are there form results being posted?
-              if (readString.indexOf("?ip") > 0){
+              if (web_server_incoming_string.indexOf("?ip") > 0){
                 web_print_page_link_settings_process(client);
               } else {
                 web_print_page_link_settings(client);
               }
             }
           #endif //FEATURE_INTERNET_LINK
-          if (readString.startsWith("GET /ctrl")){
+          if (web_server_incoming_string.startsWith("GET /ctrl")){
             valid_request = 1;
             web_print_page_control(client); 
           }
+
+          #if defined(FEATURE_MEMORIES)
+            if (web_server_incoming_string.startsWith("GET /mem")){
+              valid_request = 1;
+              // are there form results being posted?
+              // if (web_server_incoming_string.indexOf("?") > 0){
+              //   web_print_page_memories_process(client);
+              // } else {
+                web_print_page_memories(client);
+              // }
+            }
+          #endif //FEATURE_MEMORIES
+
 
           if (!valid_request){
             web_print_page_404(client);                      
@@ -13821,7 +14030,7 @@ void service_web_server() {
 
           delay(1);
           client.stop();
-          readString = "";  
+          web_server_incoming_string = "";  
          }
        }
     }
@@ -14214,7 +14423,11 @@ void web_print_page_main_menu(EthernetClient client){
 
   web_print_title(client);
 
-  web_client_println(client,F("<H1>K3NG CW Keyer</H1><hr><br><br><a href=\"ctrl\"\" class=\"internal\">Control</a><br><br><a href=\"KeyerSettings\"\" class=\"internal\">Keyer Settings</a><br><br>")); 
+  web_client_println(client,F("<H1>K3NG CW Keyer</H1><hr><br><br><a href=\"ctrl\"\" class=\"internal\">Control</a><br><br>"));
+  #if defined(FEATURE_MEMORIES)
+    web_client_println(client,F("<a href=\"mem\"\" class=\"internal\">Memories</a><br><br>"));
+  #endif //FEATURE_MEMORIES
+  web_client_println(client,F("<a href=\"KeyerSettings\"\" class=\"internal\">Keyer Settings</a><br><br>")); 
   #if defined(FEATURE_INTERNET_LINK)
     web_client_println(client,F("<a href=\"LinkSettings\"\" class=\"internal\">Link Settings</a><br><br>"));
   #endif //FEATURE_INTERNET_LINK
@@ -14236,8 +14449,8 @@ void web_print_control_radio(EthernetClient client,const char *name,int value,ui
   web_client_print(client,name);
   web_client_print(client,F("\" value=\""));
   web_client_print(client,value);
-  web_client_print(client,"\" ");
-  if (checked) {web_client_print(client,F("checked"));}
+  web_client_print(client,"\"");
+  if (checked) {web_client_print(client,F(" checked"));}
   web_client_print(client,">");
   web_client_print(client,caption);
   web_client_print(client,F("</label>"));
@@ -14250,10 +14463,12 @@ void web_print_control_radio(EthernetClient client,const char *name,int value,ui
 
 void web_print_control_checkbox(EthernetClient client,const char *name,uint8_t checked,const char *caption){
 
-    web_client_print(client,F("<label><input type=\"checkbox\" id=\""));
+    web_client_print(client,F("<label><input type=\"checkbox\" id=\"cbox"));
     web_client_print(client,name);
-    web_client_print(client,F("\" "));
-    if (checked) {web_client_print(client,F("checked"));}
+    web_client_print(client,F("\" value=\""));
+    web_client_print(client,name);
+    web_client_print(client,F("\""));
+    if (checked) {web_client_print(client,F(" checked"));}
     web_client_print(client,F(">"));
     web_client_print(client,caption);
     web_client_print(client,F("</label>"));
@@ -14316,8 +14531,6 @@ void web_print_page_keyer_settings(EthernetClient client){
 
   web_client_println(client,F("<H1>Keyer Settings</H1><hr><br><form>"));
 
-  web_client_println(client,F("<br><br>This is under construction - save does not work yet...<br><br>"));
-
   web_print_control_radio(client,"md",IAMBIC_A,(configuration.keyer_mode == IAMBIC_A)?1:0,"Iambic A ");
   web_print_control_radio(client,"md",IAMBIC_B,(configuration.keyer_mode == IAMBIC_B)?1:0,"Iambic B ");
   web_print_control_radio(client,"md",BUG,(configuration.keyer_mode == BUG)?1:0,"Bug ");
@@ -14333,14 +14546,25 @@ void web_print_page_keyer_settings(EthernetClient client){
     web_client_println(client,"<br>");
   #endif
   
-  web_print_control_checkbox(client,"di",(!configuration.dit_buffer_off)?1:0," Dit Buffer ");
-  web_print_control_checkbox(client,"da",(!configuration.dah_buffer_off)?1:0," Dah Buffer<br>");
+  //web_print_control_checkbox(client,"di",(!configuration.dit_buffer_off)?1:0," Dit Buffer ");  // couldn't get checkboxes working correctly 2016-12-11
+
+  web_client_print(client,"Dit Buffer"); 
+  web_print_control_radio(client,"di",0,(configuration.dit_buffer_off)?0:1,"On ");
+  web_print_control_radio(client,"di",1,(configuration.dit_buffer_off)?1:0,"Off   ");
+  web_client_println(client,"<br>");
+
+  // web_print_control_checkbox(client,"da",(!configuration.dah_buffer_off)?1:0," Dah Buffer<br>");
+
+  web_client_print(client,"Dah Buffer"); 
+  web_print_control_radio(client,"da",0,(configuration.dah_buffer_off)?0:1,"On ");
+  web_print_control_radio(client,"da",1,(configuration.dah_buffer_off)?1:0,"Off");
+  web_client_println(client,"<br>");
 
   web_print_control_radio(client,"sm",SPEED_NORMAL,(speed_mode == SPEED_NORMAL)?1:0,"Normal Speed Mode ");
 
   web_print_control_textbox(client,"wp","addr",(int)configuration.wpm,""," WPM ");
 
-  #ifdef FEATURE_FARNSWORTH
+  #if defined(FEATURE_FARNSWORTH)
     web_print_control_textbox(client,"fw","addr",(int)configuration.wpm_farnsworth,""," Farnsworth WPM");
   #endif //FEATURE_FARNSWORTH
 
@@ -14370,14 +14594,21 @@ void web_print_page_keyer_settings(EthernetClient client){
     web_client_println(client,F("<br>"));;
   #endif 
 
-  #ifdef FEATURE_POTENTIOMETER
-    web_print_control_textbox(client,"po","addr",(int)pot_value_wpm(),"Potentiometer "," WPM ");
-    web_print_control_checkbox(client,"pa",(configuration.pot_activated)?1:0," Active");
+  #if defined(FEATURE_POTENTIOMETER)
+    //web_print_control_textbox(client,"po","addr",(int)pot_value_wpm(),"Potentiometer "," WPM ");
+    //web_print_control_checkbox(client,"pa",(configuration.pot_activated)?1:0," Active");
+    web_client_print(client,"Potentiometer ");
+    web_print_control_radio(client,"pa",1,(configuration.pot_activated)?1:0,"Active ");
+    web_print_control_radio(client,"pa",0,(configuration.pot_activated)?0:1,"Inactive");    
     web_client_println(client,F("<br>"));
   #endif
 
-  #ifdef FEATURE_AUTOSPACE
-    web_print_control_checkbox(client,"as",(configuration.autospace_active)?1:0," Autospace<br>");
+  #if defined(FEATURE_AUTOSPACE)
+    //web_print_control_checkbox(client,"as",(configuration.autospace_active)?1:0," Autospace<br>");
+    web_client_print(client,"Autospace"); 
+    web_print_control_radio(client,"as",1,(configuration.autospace_active)?1:0,"On ");
+    web_print_control_radio(client,"as",0,(configuration.autospace_active)?0:1,"Off");
+    web_client_println(client,"<br>");    
   #endif //FEATURE_AUTOSPACE
 
   web_print_control_textbox(client,"ws","addr",(int)configuration.length_wordspace,"Wordspace ","");
@@ -14386,8 +14617,14 @@ void web_print_page_keyer_settings(EthernetClient client){
   web_print_control_textbox(client,"tx","addr",(int)configuration.current_tx,"TX ","");
   web_client_println(client,F("<br>"));
 
-  #ifdef FEATURE_QLF
-    web_print_control_checkbox(client,"ql",(qlf_active)?1:0," QLF<br>");
+  #if defined(FEATURE_QLF)
+    //web_print_control_checkbox(client,"ql",(qlf_active)?1:0," QLF<br>");
+
+    web_client_print(client,"QLF"); 
+    web_print_control_radio(client,"ql",1,(qlf_active)?1:0,"On ");
+    web_print_control_radio(client,"ql",0,(qlf_active)?0:1,"Off");
+    web_client_println(client,"<br>");
+
   #endif //FEATURE_QLF
 
   web_client_println(client,F("<br><br><input type=\"submit\" value=\"Save\"></form>"));
@@ -14400,6 +14637,260 @@ void web_print_page_keyer_settings(EthernetClient client){
 #endif //FEATURE_WEB_SERVER 
              
 //-------------------------------------------------------------------------------------------------------
+
+
+
+#if defined(FEATURE_WEB_SERVER)
+
+void web_print_page_keyer_settings_process(EthernetClient client){
+
+
+  uint8_t invalid_data = 0;
+
+  unsigned int ud = 0;
+
+  uint8_t temp_keyer_mode = 0;
+  uint8_t temp_dit_buffer_off = 0;
+  uint8_t temp_dah_buffer_off = 0;  
+  uint8_t temp_speed_mode = 0;
+  unsigned int temp_wpm = 0;
+  unsigned int temp_qrss_dit_length = 0;
+  uint8_t temp_sidetone_mode = 0;
+  unsigned int temp_sidetone_hz = 0;
+  String temp_string_dit_dah_ratio;
+  uint8_t temp_weight = 0;
+  unsigned int temp_serial = 0;
+  uint8_t temp_wordspace = 0;
+  uint8_t temp_tx = 0;  
+
+  #if defined(FEATURE_QLF)
+    uint8_t temp_qlf = 0;
+  #endif //FEATURE_QLF
+
+  #if defined(FEATURE_POTENTIOMETER)
+    uint8_t temp_pot_activated = 0;
+  #endif //FEATURE_POTENTIOMETER
+    
+  #if defined(FEATURE_AUTOSPACE)
+    uint8_t temp_autospace_active = 0;
+  #endif //FEATURE_AUTOSPACE
+
+  #if defined(FEATURE_FARNSWORTH)
+    unsigned int temp_farnsworth = 0;
+  #endif //FEATURE_FARNSWORTH
+
+  parse_get(web_server_incoming_string);
+
+  if (parse_get_results_index){
+
+
+
+    for (int x = 0; x < parse_get_results_index; x++){ 
+      if (parse_get_results[x].parameter == "md"){temp_keyer_mode = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "di"){temp_dit_buffer_off = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "da"){temp_dah_buffer_off = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "sm"){temp_speed_mode = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "wp"){temp_wpm = parse_get_results[x].value_long;}
+      #if defined(FEATURE_FARNSWORTH)
+        if (parse_get_results[x].parameter == "fw"){temp_farnsworth = parse_get_results[x].value_long;}
+      #endif //FEATURE_FARNSWORTH
+      if (parse_get_results[x].parameter == "qd"){temp_qrss_dit_length = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "st"){temp_sidetone_mode = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "hz"){temp_sidetone_hz = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "dd"){temp_string_dit_dah_ratio = parse_get_results[x].value_string;}
+      if (parse_get_results[x].parameter == "wt"){temp_weight = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "sn"){temp_serial = parse_get_results[x].value_long;}
+      // po - nothing to do for potentiometer value
+      #if defined(FEATURE_POTENTIOMETER)
+        if (parse_get_results[x].parameter == "pa"){temp_pot_activated = parse_get_results[x].value_long;}
+      #endif //FEATURE_POTENTIOMETER
+      #if defined(FEATURE_AUTOSPACE)
+        if (parse_get_results[x].parameter == "as"){temp_autospace_active = parse_get_results[x].value_long;}
+      #endif //FEATURE_AUTOSPACE        
+      if (parse_get_results[x].parameter == "ws"){temp_wordspace = parse_get_results[x].value_long;}
+      if (parse_get_results[x].parameter == "tx"){temp_tx = parse_get_results[x].value_long;}
+      #if defined(FEATURE_QLF)
+        if (parse_get_results[x].parameter == "ql"){temp_qlf = parse_get_results[x].value_long;}
+      #endif //FEATURE_QLF      
+
+
+    }
+    
+
+    // data validation
+    
+
+    // TODO !  data validation
+
+
+    if (invalid_data){
+
+      web_print_header(client);
+      web_print_meta_refresh(client,configuration.ip[0],configuration.ip[1],configuration.ip[2],configuration.ip[3],2);                                                   
+      web_client_println(client,F("\/KeyerSettings'\" />"));      
+      web_print_style_sheet(client);
+      web_print_title(client);
+      web_client_println(client,F("<br>Bad data!<br>"));
+      web_print_home_link(client);
+      web_print_footer(client);
+
+    } else { 
+
+    // assign to variables
+           
+      configuration.keyer_mode = temp_keyer_mode;
+      configuration.dit_buffer_off = temp_dit_buffer_off;
+      configuration.dah_buffer_off = temp_dah_buffer_off;
+      speed_mode = temp_speed_mode;
+      configuration.wpm = temp_wpm;
+      qrss_dit_length = temp_qrss_dit_length;
+      configuration.sidetone_mode = temp_sidetone_mode;
+      configuration.hz_sidetone = temp_sidetone_hz;
+      temp_string_dit_dah_ratio.replace(".","");
+      configuration.dah_to_dit_ratio =  temp_string_dit_dah_ratio.toInt();
+      configuration.weighting = temp_weight;
+      serial_number = temp_serial;
+      configuration.length_wordspace = temp_wordspace;
+      configuration.current_tx = temp_tx;
+      #if defined(FEATURE_QLF)
+        qlf_active = temp_qlf;
+      #endif //FEATURE_QLF  
+      #if defined(FEATURE_POTENTIOMETER)
+        configuration.pot_activated = temp_pot_activated;
+      #endif //FEATURE_POTENTIOMETER  
+      #if defined(FEATURE_AUTOSPACE)
+        configuration.autospace_active = temp_autospace_active;
+      #endif //FEATURE_AUTOSPACE  
+      #if defined(FEATURE_FARNSWORTH)
+        configuration.wpm_farnsworth = temp_farnsworth;
+      #endif //FEATURE_FARNSWORTH
+
+      web_print_header(client);
+      web_print_meta_refresh(client,configuration.ip[0],configuration.ip[1],configuration.ip[2],configuration.ip[3],2);                                                   
+      web_client_println(client,F("\/KeyerSettings'\" />"));
+      web_print_style_sheet(client);
+      web_print_title(client);
+      web_client_println(client,F("<br>Configuration saved<br><br>"));
+      web_print_home_link(client);
+      web_print_footer(client);
+      config_dirty = 1;
+    }
+  }
+}
+#endif //FEATURE_WEB_SERVER
+
+//-------------------------------------------------------------------------------------------------------
+
+
+#if defined(FEATURE_WEB_SERVER) && defined(FEATURE_MEMORIES)
+
+void web_print_page_memories(EthernetClient client){
+
+//zzzzzzzz
+
+  int memory_number_to_send = 0;
+  int last_memory_location;
+
+  #if defined(OPTION_PROSIGN_SUPPORT)
+    byte eeprom_temp = 0;
+    static char * prosign_temp = "";
+  #endif
+
+
+
+
+  web_print_header(client);
+
+  web_print_style_sheet(client);
+
+  web_print_title(client);
+
+  web_client_println(client,F("<H1>Memories</H1><hr><br>"));
+
+  web_client_print(client,F("<br><br>"));
+
+  //if (web_server_incoming_string.length() > 14){web_server_incoming_string.remove(14);}
+
+  if ((web_server_incoming_string.indexOf("?m") > 0) && (web_server_incoming_string.length() > (web_server_incoming_string.indexOf("?m")+2))) {
+    memory_number_to_send = ((web_server_incoming_string.charAt(web_server_incoming_string.indexOf("?m")+2)-48)*10) + (web_server_incoming_string.charAt(web_server_incoming_string.indexOf("?m")+3)-48);
+
+
+// web_client_print(client,web_server_incoming_string);
+// web_client_print(client,F("<br><br>"));
+
+// web_client_print(client,F("mem number: "));
+// web_client_print(client,memory_number_to_send);
+// web_client_print(client,F("<br><br>"));
+
+// web_client_print(client,web_server_incoming_string.charAt(web_server_incoming_string.indexOf("?m")+1));
+// web_client_print(client,web_server_incoming_string.charAt(web_server_incoming_string.indexOf("?m")+2));
+// web_client_print(client,F("<br><br>"));
+
+    add_to_send_buffer(SERIAL_SEND_BUFFER_MEMORY_NUMBER);
+    add_to_send_buffer(memory_number_to_send-1);
+  }
+
+
+  for(int i = 0;i < number_of_memories;i++){
+    web_client_print(client,F("<a href=\"/mem?m"));
+    if(i < 9){web_client_print(client,"0");}
+    web_client_print(client,i+1);
+    web_client_print(client,"\" class=\"ctrl\">");
+    web_client_print(client,i+1);
+    
+
+  
+    last_memory_location = memory_end(i) + 1;
+
+    if (EEPROM.read(memory_start(i)) == 255) {
+      // web_client_print(client,F("{empty}"));
+      web_client_print(client,F("       "));
+    } else {
+      web_client_print(client,") ");
+      for (int y = (memory_start(i)); (y < last_memory_location); y++) {
+        if (EEPROM.read(y) < 255) {
+          #if defined(OPTION_PROSIGN_SUPPORT)
+            eeprom_temp = EEPROM.read(y);
+            if ((eeprom_temp > PROSIGN_START) && (eeprom_temp < PROSIGN_END)){
+              prosign_temp = convert_prosign(eeprom_temp);
+              web_client_write(client,prosign_temp[0]);
+              web_client_write(client,prosign_temp[1]);
+            } else {
+              web_client_write(client,eeprom_temp);
+            }
+          #else         
+            web_client_write(client,EEPROM.read(y));
+          #endif //OPTION_PROSIGN_SUPPORT
+        } else {
+          y = last_memory_location;
+        }
+      }
+    }
+
+
+    web_client_print(client,"</a>");
+    // web_client_print(client,"<br><br><br>");
+    if (number_of_memories > 4){
+      if (((i+1) % 4) == 0){web_client_print(client,"<br><br><br>");}
+    }
+  }
+
+  web_client_print(client,F("<br>")); 
+
+  web_print_home_link(client);
+
+  web_print_footer(client);
+
+
+  
+
+}
+#endif //FEATURE_WEB_SERVER && FEATURE_MEMORIES
+
+
+//-------------------------------------------------------------------------------------------------------
+
+
 #if defined(FEATURE_WEB_SERVER)
 
 void web_print_page_control(EthernetClient client){
@@ -14410,7 +14901,9 @@ void web_print_page_control(EthernetClient client){
 
     /ctrlnd - no display
 
-    /strlnd?st<TEXTTOSEND>/
+    /ctrlnd?st<TEXTTOSEND>/
+
+    http://192.168.1.178/ctrlnd?sttest/
 
 
   */
@@ -14425,8 +14918,8 @@ void web_print_page_control(EthernetClient client){
 
   String url_sub_string; 
 
-  if ((readString.indexOf("ctrl?") > 0) || (readString.indexOf("ctrlnd?") > 0)){
-    url_sub_string = readString;
+  if ((web_server_incoming_string.indexOf("ctrl?") > 0) || (web_server_incoming_string.indexOf("ctrlnd?") > 0)){
+    url_sub_string = web_server_incoming_string;
     if (url_sub_string.length() > 14){url_sub_string.remove(14);}
     if (url_sub_string.indexOf("?ky") > 0){
       sending_mode = AUTOMATIC_SENDING;
@@ -14443,22 +14936,22 @@ void web_print_page_control(EthernetClient client){
       speed_change(2);
     }
     #if defined(FEATURE_MEMORIES)
-    if ((readString.indexOf("?m") > 0) & (readString.length() > (readString.indexOf("?m")+2))) {
-      memory_number_to_send = ((readString.charAt(readString.indexOf("m")+1)-48)*10) + (readString.charAt(readString.indexOf("m")+2)-48);
-      add_to_send_buffer(SERIAL_SEND_BUFFER_MEMORY_NUMBER);
-      add_to_send_buffer(memory_number_to_send-1);
-    }
+      if ((web_server_incoming_string.indexOf("?m") > 0) & (web_server_incoming_string.length() > (web_server_incoming_string.indexOf("?m")+2))) {
+        memory_number_to_send = ((web_server_incoming_string.charAt(web_server_incoming_string.indexOf("m")+1)-48)*10) + (web_server_incoming_string.charAt(web_server_incoming_string.indexOf("m")+2)-48);
+        add_to_send_buffer(SERIAL_SEND_BUFFER_MEMORY_NUMBER);
+        add_to_send_buffer(memory_number_to_send-1);
+      }
     #endif //FEATURE_MEMORIES
     if (url_sub_string.indexOf("?st") > 0){
-      for (int x = (readString.indexOf("st")+2);x < readString.length();x++){
-        if (readString.charAt(x) == '/'){
-          x = readString.length();      
+      for (int x = (web_server_incoming_string.indexOf("st")+2);x < web_server_incoming_string.length();x++){
+        if (web_server_incoming_string.charAt(x) == '/'){
+          x = web_server_incoming_string.length();      
         } else {
-          if (readString.charAt(x) == '%'){  // do we have a http hex code?
-            add_to_send_buffer((((uint8_t)readString.charAt(x+1)-48)<<4)+((uint8_t)readString.charAt(x+2)-48));
+          if (web_server_incoming_string.charAt(x) == '%'){  // do we have a http hex code?
+            add_to_send_buffer((((uint8_t)web_server_incoming_string.charAt(x+1)-48)<<4)+((uint8_t)web_server_incoming_string.charAt(x+2)-48));
             x = x + 2;
           } else {
-            add_to_send_buffer(uppercase(readString.charAt(x)));
+            add_to_send_buffer(uppercase(web_server_incoming_string.charAt(x)));
           }
         }
       }
@@ -14467,7 +14960,7 @@ void web_print_page_control(EthernetClient client){
 
   
 
-  if (readString.indexOf("nd") > 0){ // no display option
+  if (web_server_incoming_string.indexOf("nd") > 0){ // no display option
 
     web_print_200OK(client);
 
@@ -14482,8 +14975,8 @@ void web_print_page_control(EthernetClient client){
     web_client_println(client,F("<H1>Control</H1><hr><br>"));
   //zzzzzzz
 
-// web_client_print(client,"readString: ");
-// web_client_print(client,readString);
+// web_client_print(client,"web_server_incoming_string: ");
+// web_client_print(client,web_server_incoming_string);
 // web_client_print(client,"url_sub_string: ");
 // web_client_print(client,url_sub_string);
 // web_client_println(client,F("<br><br>"));
@@ -14682,7 +15175,7 @@ void web_print_page_link_settings_process(EthernetClient client){
 
   unsigned int ud = 0;
 
-  parse_get(readString);
+  parse_get(web_server_incoming_string);
   if (parse_get_results_index){
 
     for (int x = 0; x < parse_get_results_index; x++){   // TODO - rewrite this to scale...
@@ -14801,7 +15294,7 @@ void web_print_page_network_settings_process(EthernetClient client){
 
   unsigned int ud = 0;
 
-  parse_get(readString);
+  parse_get(web_server_incoming_string);
   if (parse_get_results_index){
 
     for (int x = 0; x < parse_get_results_index; x++){

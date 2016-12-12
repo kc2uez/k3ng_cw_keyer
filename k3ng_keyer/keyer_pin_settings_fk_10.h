@@ -1,11 +1,24 @@
+/* Pins - you must review these and configure ! */
 
-// ######## ########  ######  ######## 
-//    ##    ##       ##    ##    ##    
-//    ##    ##       ##          ##    
-//    ##    ######    ######     ##    
-//    ##    ##             ##    ##    
-//    ##    ##       ##    ##    ##    
-//    ##    ########  ######     ##    
+// ######## ##     ## ##    ## ##    ## ######## ##    ## ######## ########  
+// ##       ##     ## ###   ## ##   ##  ##        ##  ##  ##       ##     ## 
+// ##       ##     ## ####  ## ##  ##   ##         ####   ##       ##     ## 
+// ######   ##     ## ## ## ## #####    ######      ##    ######   ########  
+// ##       ##     ## ##  #### ##  ##   ##          ##    ##       ##   ##   
+// ##       ##     ## ##   ### ##   ##  ##          ##    ##       ##    ##  
+// ##        #######  ##    ## ##    ## ########    ##    ######## ##     ## 
+
+
+// ######## ##    ##    ##     #####   
+// ##       ##   ##   ####    ##   ##  
+// ##       ##  ##      ##   ##     ## 
+// ######   #####       ##   ##     ## 
+// ##       ##  ##      ##   ##     ## 
+// ##       ##   ##     ##    ##   ##  
+// ##       ##    ##  ######   #####  
+
+// Contributed by Disneysw
+
 
 
 #ifndef keyer_pin_settings_h
@@ -13,19 +26,15 @@
 
 #define paddle_left 2
 #define paddle_right 5
-#define tx_key_line_1 11       // (high = key down/tx on)
-#define tx_key_line_2 12
+#define tx_key_line_1 39       // (high = key down/tx on)
+#define tx_key_line_2 0
 #define tx_key_line_3 0
 #define tx_key_line_4 0
 #define tx_key_line_5 0
 #define tx_key_line_6 0
-#if !defined(FEATURE_ETHERNET)
-  #define sidetone_line 4         // connect a speaker for sidetone 
-#else
-  #define sidetone_line 31        // pin 4 is used by Ethernet shield so we'll use ping 31 on the test jig...
-#endif
+#define sidetone_line 3         // connect a speaker for sidetone
 #define potentiometer A0        // Speed potentiometer (0 to 5 V) Use pot from 1k to 10k
-#define ptt_tx_1 13              // PTT ("push to talk") lines
+#define ptt_tx_1 40              // PTT ("push to talk") lines
 #define ptt_tx_2 0              //   Can be used for keying fox transmitter, T/R switch, or keying slow boatanchors
 #define ptt_tx_3 0              //   These are optional - set to 0 if unused
 #define ptt_tx_4 0
@@ -34,27 +43,26 @@
 #define tx_key_dit 0            // if defined, goes active for dit (any transmitter) - customized with tx_key_dit_and_dah_pins_active_state and tx_key_dit_and_dah_pins_inactive_state
 #define tx_key_dah 0            // if defined, goes active for dah (any transmitter) - customized with tx_key_dit_and_dah_pins_active_state and tx_key_dit_and_dah_pins_inactive_state
 
-
 #ifdef FEATURE_COMMAND_BUTTONS
-  #define analog_buttons_pin A1
+  #define analog_buttons_pin A2
   #define command_mode_active_led 0
 #endif //FEATURE_COMMAND_BUTTONS
 
 
 //lcd pins
 #ifdef FEATURE_LCD_4BIT
-  #define lcd_rs A2
-  #define lcd_enable 10  // pin 10 is used by Ethernet shield and will conflict with that
-  #define lcd_d4 6
-  #define lcd_d5 7
-  #define lcd_d6 8
-  #define lcd_d7 9
+  #define lcd_rs 49
+  #define lcd_enable 48
+  #define lcd_d4 47
+  #define lcd_d5 46
+  #define lcd_d6 45
+  #define lcd_d7 44
 #endif //FEATURE_LCD_4BIT
 
 #ifdef FEATURE_LCD1602_N07DH
   #define lcd_rs 8
   #define lcd_enable 9
-  #define lcd_d4 4       // pin 4 is used by Ethernet shield and will conflict with that
+  #define lcd_d4 4
   #define lcd_d5 5
   #define lcd_d6 6
   #define lcd_d7 7
@@ -69,8 +77,8 @@
 // rotary encoder pins and options - rotary encoder code from Jim Balls M0CKE
 #ifdef FEATURE_ROTARY_ENCODER
   #define OPTION_ENCODER_HALF_STEP_MODE     // Half-step mode?
-  #define rotary_pin1 0                      // CW Encoder Pin
-  #define rotary_pin2 0                    // CCW Encoder Pin
+  #define rotary_pin1 42                      // CW Encoder Pin
+  #define rotary_pin2 43                    // CCW Encoder Pin
   #define OPTION_ENCODER_ENABLE_PULLUPS     // define to enable weak pullups.
 #endif //FEATURE_ROTARY_ENCODER
 
@@ -90,15 +98,15 @@
 #endif //FEATURE_PTT_INTERLOCK
 
 #ifdef FEATURE_STRAIGHT_KEY
-  #define pin_straight_key A5 //52   // pin 52 doesn't work right when FEATURE_WEB_SERVER is active.  don't know why 2016-04-26
+  #define pin_straight_key 52
 #endif //FEATURE_STRAIGHT_KEY
 
 #ifdef FEATURE_CW_DECODER
-  #define cw_decoder_pin A3//A11 //A5 //A3  
+  #define cw_decoder_pin A4//A11 //A5 //A3  
   #ifdef OPTION_CW_DECODER_GOERTZEL_AUDIO_DETECTOR
-    #define cw_decoder_audio_input_pin 0 // this must be an analog pin!
+    #define cw_decoder_audio_input_pin A4 // this must be an analog pin!
   #endif //OPTION_CW_DECODER_GOERTZEL_AUDIO_DETECTOR
-  #define cw_decoder_indicator 24
+  #define cw_decoder_indicator 4
 #endif //FEATURE_CW_DECODER
 
 
@@ -107,7 +115,7 @@
 #endif //FEATURE_COMPETITION_COMPRESSION_DETECTION
 
 #if defined(FEATURE_SLEEP)
-  #define keyer_awake 13       // Goes active when keyer is awake, inactive when in sleep mode; change active and inactive states in keyer_settings file
+  #define keyer_awake 0
 #endif
 
 #if defined(FEATURE_CAPACITIVE_PADDLE_PINS)
@@ -119,13 +127,4 @@
   #error "Multiple pin_settings.h files included somehow..."
 
 #endif //keyer_pin_settings_h
-
-
-// ######## ########  ######  ######## 
-//    ##    ##       ##    ##    ##    
-//    ##    ##       ##          ##    
-//    ##    ######    ######     ##    
-//    ##    ##             ##    ##    
-//    ##    ##       ##    ##    ##    
-//    ##    ########  ######     ##    
 
